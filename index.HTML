@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FindX | Interactive Retrieval Network</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-dark: #020203;
+            --accent-primary: #00f2ff;
+            --accent-secondary: #7000ff;
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #ffffff;
+            --text-dim: #94a3b8;
+            --neon-glow: 0 0 25px rgba(0, 242, 255, 0.3);
+            --transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        html { scroll-behavior: smooth; }
+        body { background-color: var(--bg-dark); color: var(--text-main); overflow-x: hidden; width: 100%; touch-action: manipulation; }
+
+        #three-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+
+        /* Fast Intro */
+        #intro-overlay {
+            position: fixed; inset: 0; background: var(--bg-dark); z-index: 5000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.8s ease-in-out; pointer-events: none;
+        }
+        .intro-text {
+            font-family: 'Space Grotesk', sans-serif; font-size: 3.5rem; font-weight: 700;
+            background: linear-gradient(to right, #fff, var(--accent-primary));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            opacity: 0; transform: scale(0.9); transition: all 0.4s ease;
+        }
+        .intro-text.show { opacity: 1; transform: scale(1); }
+
+        /* Navigation */
+        nav {
+            position: fixed; top: 0; width: 100%; padding: 1.2rem 5%;
+            display: flex; justify-content: space-between; align-items: center; z-index: 1000;
+            transition: var(--transition);
+        }
+        nav.scrolled { background: rgba(2, 2, 3, 0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--glass-border); padding: 0.8rem 5%; }
+        .logo { font-size: 1.5rem; font-weight: 800; color: #fff; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+        .logo span { color: var(--accent-primary); }
+
+        /* Layout */
+        section { padding: 100px 5% 60px; min-height: 100vh; width: 100%; display: flex; flex-direction: column; justify-content: center; opacity: 0; transform: translateY(20px); transition: 0.8s ease-out; position: relative; }
+        section.visible { opacity: 1; transform: translateY(0); }
+
+        .hero-title { font-size: clamp(2.5rem, 10vw, 5rem); font-family: 'Space Grotesk', sans-serif; line-height: 1.1; margin-bottom: 1.5rem; text-align: center; }
+        .hero-title span { color: var(--accent-primary); }
+
+        /* Components */
+        .glass-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 24px; padding: 2rem; backdrop-filter: blur(12px); transition: var(--transition); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; width: 100%; }
+
+        .search-bar { width: 100%; max-width: 600px; margin: 2rem auto; position: relative; z-index: 10; }
+        .search-bar input { width: 100%; padding: 18px 24px 18px 50px; border-radius: 100px; background: var(--glass); border: 1px solid var(--glass-border); color: #fff; font-size: 1rem; outline: none; transition: var(--transition); }
+        .search-bar input:focus { border-color: var(--accent-primary); box-shadow: var(--neon-glow); background: rgba(255,255,255,0.06); }
+        .search-bar i { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: var(--accent-primary); }
+
+        .item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.2rem; }
+        .item-card { background: var(--glass); border: 1px solid var(--glass-border); padding: 1.5rem; border-radius: 20px; transition: var(--transition); position: relative; }
+        .item-card.type-lost { border-left: 4px solid #ff4d4d; }
+        .item-card.type-found { border-left: 4px solid #00ff88; }
+
+        .btn { padding: 16px 32px; border-radius: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; border: none; transition: var(--transition); display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px; text-decoration: none; }
+        .btn-primary { background: var(--accent-primary); color: #000; }
+        .btn-outline { background: transparent; color: #fff; border: 1px solid var(--accent-primary); }
+
+        /* Mobile Adjustments */
+        .mobile-tab-bar { display: none; position: fixed; bottom: 0; width: 100%; background: rgba(2,2,3,0.95); backdrop-filter: blur(15px); border-top: 1px solid var(--glass-border); padding: 12px 5%; justify-content: space-around; z-index: 1000; }
+        @media (max-width: 768px) {
+            .mobile-tab-bar { display: flex; }
+            nav .nav-links { display: none; }
+            section { padding-top: 80px; padding-bottom: 100px; }
+            .hero-title { font-size: 3rem; }
+        }
+
+        .tab-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-dim); text-decoration: none; font-size: 10px; }
+        .tab-item.active { color: var(--accent-primary); }
+        
+        .stat-pill { background: rgba(0, 242, 255, 0.1); border: 1px solid rgba(0, 242, 255, 0.2); padding: 8px 16px; border-radius: 100px; font-size: 12px; color: var(--accent-primary); font-weight: 700; margin-bottom: 1rem; text-transform: uppercase; }
+        
+        /* Interactive Hint */
+        #hint { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--text-dim); opacity: 0.5; pointer-events: none; z-index: 5; }
+
+        /* Form styling */
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
+        .form-group input, .form-group textarea { width: 100%; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: #fff; outline: none; }
+        .form-group input:focus, .form-group textarea:focus { border-color: var(--accent-primary); }
+    </style>
+</head>
+<body>
+
+    <div id="intro-overlay">
+        <h2 class="intro-text" id="intro-line">FINDX</h2>
+    </div>
+
+    <canvas id="three-canvas"></canvas>
+    <div id="hint">TOUCH TO INTERACT WITH NETWORK FIELD</div>
+
+    <nav id="navbar">
+        <a href="#" class="logo"><i data-lucide="shield-check"></i> FIND<span>X</span></a>
+        <div class="nav-links">
+            <a href="#hero" style="color: inherit; text-decoration: none; font-size: 14px; font-weight: 600;">Home</a>
+            <a href="#submit" style="color: inherit; text-decoration: none; font-size: 14px; font-weight: 600; margin-left: 20px;">Report</a>
+            <a href="#items" style="color: inherit; text-decoration: none; font-size: 14px; font-weight: 600; margin-left: 20px;">Live Feed</a>
+        </div>
+    </nav>
+
+    <section id="hero" class="visible">
+        <div style="text-align: center;">
+            <div style="display: flex; justify-content: center;"><div class="stat-pill">Neural Field Connected</div></div>
+            <h1 class="hero-title">Recover. <span>Relocate.</span> Restore.</h1>
+            <p style="color: var(--text-dim); max-width: 600px; margin: 0 auto 2.5rem; font-size: 1.1rem; line-height: 1.6;">A living registry for lost assets. Use the interactive field to explore connections or file a report below.</p>
+            
+            <div class="search-bar">
+                <i data-lucide="search"></i>
+                <input type="text" id="globalSearch" placeholder="Search item registry...">
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="scrollToId('submit')">Report Asset</button>
+                <button class="btn btn-outline" onclick="scrollToId('items')">Scan Feed</button>
+            </div>
+        </div>
+    </section>
+
+    <section id="submit">
+        <div class="grid">
+            <div class="glass-card">
+                <h2 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 10px;"><i data-lucide="search"></i> Lost Item</h2>
+                <form id="lostForm">
+                    <div class="form-group"><label>Asset Name</label><input type="text" id="lostName" placeholder="e.g. iPhone 15 Pro" required></div>
+                    <div class="form-group"><label>Last Known Coordinates</label><input type="text" id="lostLoc" placeholder="Central Park West" required></div>
+                    <div class="form-group"><label>Identification Details</label><textarea id="lostDetails" rows="3" placeholder="Unique stickers, scratches, case color..."></textarea></div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Transmit Report</button>
+                </form>
+            </div>
+            <div class="glass-card">
+                <h2 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 10px;"><i data-lucide="package-open"></i> Found Item</h2>
+                <form id="foundForm">
+                    <div class="form-group"><label>Recovered Asset</label><input type="text" id="foundName" placeholder="e.g. Set of Keys" required></div>
+                    <div class="form-group"><label>Discovery Location</label><input type="text" id="foundLoc" placeholder="Gate 4, Terminal B" required></div>
+                    <div class="form-group"><label>Handover Protocol</label><textarea id="foundDetails" rows="3" placeholder="How can the owner contact you for collection?"></textarea></div>
+                    <button type="submit" class="btn btn-outline" style="width: 100%;">Broadcast Discovery</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <section id="items">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <h2 style="font-size: 2rem;">Item Registry</h2>
+                <p style="color: var(--text-dim); font-size: 14px;">Syncing with global retrieval database...</p>
+            </div>
+            <div style="display: flex; gap: 0.8rem;">
+                <select id="typeFilter" style="width: auto; padding: 10px 15px; background: var(--glass); border: 1px solid var(--glass-border); color: #fff; border-radius: 12px; outline:none;">
+                    <option value="all">All Items</option>
+                    <option value="lost">Lost</option>
+                    <option value="found">Found</option>
+                </select>
+                <button id="refreshFeed" class="btn btn-outline" style="padding: 10px 15px; min-width: 0;"><i data-lucide="rotate-cw" size="18"></i></button>
+            </div>
+        </div>
+        <div class="item-grid" id="itemGrid"></div>
+    </section>
+
+    <div class="mobile-tab-bar">
+        <a href="#hero" class="tab-item active"><i data-lucide="home"></i> Home</a>
+        <a href="#submit" class="tab-item"><i data-lucide="plus-square"></i> Report</a>
+        <a href="#items" class="tab-item"><i data-lucide="activity"></i> Feed</a>
+        <a href="mailto:wex3820@gmail.com" class="tab-item"><i data-lucide="help-circle"></i> Help</a>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- TELEGRAM CONFIG ---
+        const TG_BOT_TOKEN = "8166486049:AAG8OOWqKTu7kWxE20M7XQfSQNnDuzX0bbw";
+        const TG_USER_ID = "7240853279";
+
+        // --- FIREBASE SETUP ---
+        let firebaseConfig;
+        let appId;
+        let initialToken;
+
+        try {
+            // Check if running in Canvas environment or VS Code
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'findx-prod';
+                initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+            } else {
+                // FALLBACK for VS CODE: Add your Firebase config here if you want it to work locally
+                firebaseConfig = {
+                    apiKey: "LOCAL_DEV_KEY",
+                    authDomain: "local-dev.firebaseapp.com",
+                    projectId: "local-dev",
+                    storageBucket: "local-dev.appspot.com",
+                    messagingSenderId: "00000000",
+                    appId: "0:0000000:web:0000"
+                };
+                appId = 'findx-local-dev';
+            }
+        } catch (e) {
+            console.warn("Firebase config error, using dummy config");
+            firebaseConfig = { projectId: "dummy" };
+            appId = 'dummy-app';
+        }
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let dbItems = [];
+
+        // --- Telegram Notification Logic ---
+        const sendTelegramAlert = async (data) => {
+            const message = `🚨 *New FindX Report* 🚨\n\n` +
+                          `📌 *Type:* ${data.type.toUpperCase()}\n` +
+                          `📦 *Item:* ${data.name}\n` +
+                          `📍 *Location:* ${data.loc}\n` +
+                          `📝 *Details:* ${data.details}\n` +
+                          `🔑 *Owner ID:* ${data.ownerId}`;
+            
+            try {
+                await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: TG_USER_ID,
+                        text: message,
+                        parse_mode: 'Markdown'
+                    })
+                });
+            } catch (err) {
+                console.error("Telegram alert failed:", err);
+            }
+        };
+
+        const startApp = async () => {
+            const overlay = document.getElementById('intro-overlay');
+            const text = document.getElementById('intro-line');
+            
+            initInteractiveBackground();
+            initAuth();
+
+            text.innerText = "ACCESSING"; text.classList.add('show');
+            await new Promise(r => setTimeout(r, 800));
+            text.classList.remove('show');
+            
+            await new Promise(r => setTimeout(r, 100));
+            text.innerText = "FINDX NETWORK"; text.classList.add('show');
+            await new Promise(r => setTimeout(r, 1000));
+            
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay.style.display = 'none', 800);
+        };
+
+        const initInteractiveBackground = () => {
+            const canvas = document.getElementById('three-canvas');
+            if (!canvas) return;
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+            const particlesCount = window.innerWidth < 768 ? 800 : 2000;
+            const posArray = new Float32Array(particlesCount * 3);
+            const velocityArray = new Float32Array(particlesCount * 3);
+
+            for(let i=0; i < particlesCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 15;
+                velocityArray[i] = (Math.random() - 0.5) * 0.01;
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: 0x00f2ff,
+                size: 0.03,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+
+            const points = new THREE.Points(geometry, material);
+            scene.add(points);
+            camera.position.z = 6;
+
+            const mouse = new THREE.Vector2(-100, -100);
+            const onMove = (x, y) => {
+                mouse.x = (x / window.innerWidth) * 2 - 1;
+                mouse.y = -(y / window.innerHeight) * 2 + 1;
+            };
+
+            window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+            window.addEventListener('touchstart', (e) => onMove(e.touches[0].clientX, e.touches[0].clientY));
+            window.addEventListener('touchmove', (e) => onMove(e.touches[0].clientX, e.touches[0].clientY));
+
+            const animate = () => {
+                requestAnimationFrame(animate);
+                const positions = geometry.attributes.position.array;
+
+                for(let i=0; i < particlesCount; i++) {
+                    const ix = i * 3;
+                    const iy = i * 3 + 1;
+                    positions[ix] += velocityArray[ix];
+                    positions[iy] += velocityArray[iy];
+                    const dx = positions[ix] - (mouse.x * 8);
+                    const dy = positions[iy] - (mouse.y * 5);
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if(dist < 2.5) {
+                        const force = (2.5 - dist) * 0.03;
+                        positions[ix] += (dx / dist) * force;
+                        positions[iy] += (dy / dist) * force;
+                    }
+                    if(Math.abs(positions[ix]) > 10) positions[ix] *= -0.9;
+                    if(Math.abs(positions[iy]) > 8) positions[iy] *= -0.9;
+                }
+
+                geometry.attributes.position.needsUpdate = true;
+                points.rotation.y += 0.0005;
+                renderer.render(scene, camera);
+            };
+
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        };
+
+        const initAuth = async () => {
+            try {
+                if (initialToken) {
+                    await signInWithCustomToken(auth, initialToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (e) { 
+                console.error("Auth Error:", e);
+                // Silence errors locally if no firebase config
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) { 
+                currentUser = user; 
+                syncData(); 
+            }
+        });
+
+        const syncData = () => {
+            try {
+                const path = ['artifacts', appId, 'public', 'data', 'registry_items'];
+                const q = collection(db, ...path);
+                onSnapshot(q, (snap) => {
+                    dbItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderItems();
+                }, (err) => console.log("Firebase not configured or restricted. Demo mode active."));
+            } catch (e) {
+                console.log("Firestore connection skipped in local environment.");
+            }
+        };
+
+        const renderItems = () => {
+            const grid = document.getElementById('itemGrid');
+            if (!grid) return;
+
+            const search = document.getElementById('globalSearch').value.toLowerCase();
+            const typeFilt = document.getElementById('typeFilter').value;
+
+            let list = dbItems.filter(i => {
+                const matchText = (i.name || "").toLowerCase().includes(search) || (i.loc || "").toLowerCase().includes(search);
+                const matchType = typeFilt === 'all' || i.type === typeFilt;
+                return matchText && matchType;
+            }).sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+            grid.innerHTML = list.length ? '' : `<div style="grid-column:1/-1; text-align:center; padding: 4rem; color: var(--text-dim); opacity:0.5;">NO MATCHING DATA PACKETS FOUND.</div>`;
+
+            list.forEach(item => {
+                const card = document.createElement('div');
+                card.className = `item-card type-${item.type}`;
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
+                        <span style="font-size:10px; font-weight:800; color:${item.type==='lost'?'#ff4d4d':'#00ff88'}">${item.type.toUpperCase()}</span>
+                        <span style="font-size:10px; color:var(--text-dim);">${item.createdAt ? new Date(item.createdAt.seconds*1000).toLocaleDateString() : 'SYNCING'}</span>
+                    </div>
+                    <h3 style="margin-bottom:0.5rem; color:#fff;">${item.name}</h3>
+                    <p style="font-size:13px; color:var(--text-dim); margin-bottom:1rem; line-height:1.4;">${item.details || 'No meta-data provided.'}</p>
+                    <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--accent-primary);">
+                        <i data-lucide="map-pin" size="12"></i> ${item.loc}
+                    </div>
+                    <div style="margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--glass-border); padding-top:1rem;">
+                        <span style="font-size:9px; color:var(--text-dim);">ID: ${item.ownerId?.slice(0, 8) || 'ANON'}</span>
+                        <a href="mailto:wex3820@gmail.com?subject=FindX: ${item.name}" class="btn" style="padding:6px 12px; font-size:10px; background:rgba(0,242,255,0.05); color:var(--accent-primary); border:1px solid var(--accent-primary);">Contact</a>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+            lucide.createIcons();
+        };
+
+        const postReport = async (type, formId) => {
+            if (!currentUser) {
+                console.error("User not authenticated.");
+                return;
+            }
+            const form = document.getElementById(formId);
+            const btn = form.querySelector('button');
+            const originalText = btn.innerText;
+            btn.disabled = true; btn.innerText = "UPLOADING...";
+
+            const data = {
+                type,
+                name: form.querySelector('input[id$="Name"]').value,
+                loc: form.querySelector('input[id$="Loc"]').value,
+                details: form.querySelector('textarea').value,
+                ownerId: currentUser.uid,
+                createdAt: serverTimestamp()
+            };
+
+            try {
+                // Save to Firestore (only if configured)
+                if (firebaseConfig.projectId !== "dummy" && firebaseConfig.projectId !== "local-dev") {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'registry_items'), data);
+                }
+                
+                // Send Telegram Alert (This works anywhere!)
+                await sendTelegramAlert(data);
+                
+                form.reset();
+                scrollToId('items');
+            } catch (err) {
+                console.error("Upload Error:", err);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
+        };
+
+        window.scrollToId = (id) => {
+            const el = document.getElementById(id);
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        document.getElementById('lostForm').onsubmit = (e) => { e.preventDefault(); postReport('lost', 'lostForm'); };
+        document.getElementById('foundForm').onsubmit = (e) => { e.preventDefault(); postReport('found', 'foundForm'); };
+        document.getElementById('globalSearch').oninput = renderItems;
+        document.getElementById('typeFilter').onchange = renderItems;
+        document.getElementById('refreshFeed').onclick = renderItems;
+
+        const obs = new IntersectionObserver((es) => {
+            es.forEach(e => {
+                if(e.isIntersecting) {
+                    e.target.classList.add('visible');
+                    const id = e.target.getAttribute('id');
+                    document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.getAttribute('href')===`#${id}`));
+                }
+            });
+        }, { threshold: 0.15 });
+        document.querySelectorAll('section').forEach(s => obs.observe(s));
+
+        window.onscroll = () => document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 20);
+        window.onload = startApp;
+    </script>
+</body>
+</html>
